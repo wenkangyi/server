@@ -44,6 +44,13 @@ BUFFER_POOL *_bufPollSoft[5] = {
 };
 
 
+//设备终端接收缓冲池
+extern BUFFER_POOL2 devBufferPool[DEV_BUFFER_POOL_MAX_VAL];
+//软件终端接收缓冲池
+extern BUFFER_POOL2 softBufferPool[SOFT_BUFFER_POOL_MAX_VAL];
+
+
+
 pthread_mutex_t socketParamMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t softParamMutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -199,6 +206,9 @@ void SystemParamInit(void)
 	init_tables(g_conn);
 	
 	init_buffPoll();
+	
+	InitBufferPool2();
+	
 }
 
 
@@ -225,6 +235,8 @@ AcceptThread(void *arg)
 	char buf[MAXLINE],str[INET_ADDRSTRLEN];
 	int bufIndex = 0;
 	char msg[100];
+	BUFFER_POOL2_NODE *bpNode = NULL;
+	
 
 	//初始化数据库连接
 	g_conn = mysql_init(NULL);
@@ -323,6 +335,16 @@ AcceptThread(void *arg)
 					#if SYS_DEBUG
 					printf("recv new device data\n");
 					#endif
+
+					bpNode = &devBufferPool[bufIndex].bpNode[devBufferPool[bufIndex].writeIndex];
+					while(bpNode->useFlag==1);//如果被占用，即等待
+					memcpy(bpNode->cmd,buf,n);
+					bpNode->cmdLen = n;
+					bpNode->sockfd = sockfd;
+					bpNode->useFlag = 1;
+					devBufferPool[bufIndex].writeIndex ++;
+
+					#if 0 //旧代码
 					//申请缓冲节点内存
 					newNode = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
 					//申请新的命令内存
@@ -346,9 +368,11 @@ AcceptThread(void *arg)
 					lastNode->nextlink = newNode;
 					pthread_mutex_unlock(&deviceBufPollMutex[bufIndex]);
 					newNode = NULL;
+					//将接收到的数据提交到队列中，由其它线程处理
+					#endif
+
 					bufIndex ++;//10
 					if(bufIndex >=1) bufIndex=0;
-					//将接收到的数据提交到队列中，由其它线程处理
 				}
 			}
 		}
@@ -451,8 +475,9 @@ ReceiveThread(void *arg)
 	char deviceID[ID_LEN];
 	int socketID = 0;
 	char *pos = NULL;
-	BUFFER_POOL *currNode = NULL;
+	//BUFFER_POOL *currNode = NULL;
 	char msg[100];
+	BUFFER_POOL2_NODE *bpNode = NULL;
 	
 	g_conn = mysql_init(NULL);
 	if(init_mysql_conn(g_conn) == 0){
@@ -472,18 +497,22 @@ ReceiveThread(void *arg)
 	while(1)
 	{
 		//获取节点头
-		currNode = _bufPoolDevice[*devicePollIndex];
+		/*currNode = _bufPoolDevice[*devicePollIndex];
 		if(currNode->nextlink == NULL) continue;
-		currNode = currNode->nextlink;
+		currNode = currNode->nextlink;*/
+
+		bpNode = &devBufferPool[*devicePollIndex].bpNode[devBufferPool[*devicePollIndex].readIndex];
+		if(bpNode->useFlag == 0) continue;//如果无消息，即等待
+		 
 		
 		#if SYS_DEBUG
-		printf("devide socketFD:%d Rece:%s\r\n",currNode->sockfd, currNode->cmd);
+		printf("devide socketFD:%d Rece:%s\r\n",bpNode->sockfd, bpNode->cmd);
 		#endif
-		WriteLog(currNode->cmd);
+		WriteLog(bpNode->cmd);
 		
 		//下面进行ID的判断
-		if(strstr(currNode->cmd,"+WID:") != 0){
-			pos = strstr(currNode->cmd,"+WID:");//如果有心跳的话，可能会粘包
+		if(strstr(bpNode->cmd,"+WID:") != 0){
+			pos = strstr(bpNode->cmd,"+WID:");//如果有心跳的话，可能会粘包
 			//if(n == (7 + 16))//+WID:....\r\n所以为7+16
 			if(pos != 0){
 				#if SYS_DEBUG
@@ -495,22 +524,22 @@ ReceiveThread(void *arg)
 				if(rt == 0){
 					WriteLog("ID ERROR, exit Thread!");
 					//数据不对，关闭连接
-					close(currNode->sockfd);
+					close(bpNode->sockfd);
 					//需要释放epoll中的资源
 					pthread_mutex_lock(&gDeviceEfdMutex);
-					epoll_ctl(gDeviceEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+					epoll_ctl(gDeviceEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 					pthread_mutex_unlock(&gDeviceEfdMutex);
 					sprintf(msg,"device%d +WID: Error !\r\n",*devicePollIndex);
 					WriteLog(msg);
 				}
 				//将得到的ID跟数据库对比
-				else if (JudgeIDToDeviceLink(g_conn,deviceID,currNode->sockfd) == 0){
+				else if (JudgeIDToDeviceLink(g_conn,deviceID,bpNode->sockfd) == 0){
 					WriteLog("Judge ID ERROR, exit Thread!");
 					//ID不对，关闭连接
-					close(currNode->sockfd);
+					close(bpNode->sockfd);
 					//需要释放epoll中的资源
 					pthread_mutex_lock(&gDeviceEfdMutex);
-					epoll_ctl(gDeviceEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+					epoll_ctl(gDeviceEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 					pthread_mutex_unlock(&gDeviceEfdMutex);
 					sprintf(msg,"device%d not deviceID !\r\n",*devicePollIndex);
 					WriteLog(msg);
@@ -520,19 +549,19 @@ ReceiveThread(void *arg)
 				}
 			}
 		}
-		else if(strstr(currNode->cmd,"AT\r\n") != 0)
+		else if(strstr(bpNode->cmd,"AT\r\n") != 0)
 		{
-			write(currNode->sockfd, "AT+ACK\r\n", 8);
+			write(bpNode->sockfd, "AT+ACK\r\n", 8);
 		}
 		else{
 			//下面是透传协议的处理
 			#if defined(AGREEMENT_PASSTHROUGH_MODE)
-			socketID = InDeviceSockFDOutSoftSockFD(g_conn,currNode->sockfd);//GetSoftSocketID(g_conn,deviceID,_SOFT_SOCKET_ID);
+			socketID = InDeviceSockFDOutSoftSockFD(g_conn,bpNode->sockfd);//GetSoftSocketID(g_conn,deviceID,_SOFT_SOCKET_ID);
 			if(socketID < 0){
-				close(currNode->sockfd);
+				close(bpNode->sockfd);
 				//需要释放epoll中的资源
 				pthread_mutex_lock(&gDeviceEfdMutex);
-				epoll_ctl(gDeviceEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+				epoll_ctl(gDeviceEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 				pthread_mutex_unlock(&gDeviceEfdMutex);
 				sprintf(msg,"device%d not deviceSocketFD !\r\n",*devicePollIndex);
 				WriteLog(msg);
@@ -544,23 +573,25 @@ ReceiveThread(void *arg)
 				}
 				else {*/
 					#if SYS_DEBUG
-					printf("device socketFD:%d Send:%s\r\n",socketID, currNode->cmd);
+					printf("device socketFD:%d Send:%s\r\n",socketID, bpNode->cmd);
 					#endif
-					write(socketID, currNode->cmd, currNode->cmdLen);//转发
+					write(socketID, bpNode->cmd, bpNode->cmdLen);//转发
 				//}
 			}
 			#endif
 		}
-		
+
+		bpNode->useFlag = 0;//使用完成，清零
+		devBufferPool[*devicePollIndex].readIndex ++;
 		//删除节点
 		//在删除前，需要有阻塞动作
-		pthread_mutex_lock(&deviceBufPollMutex[*devicePollIndex]);
+		/*pthread_mutex_lock(&deviceBufPollMutex[*devicePollIndex]);
 		_bufPoolDevice[*devicePollIndex]->nextlink = currNode->nextlink;
 		free(currNode->cmd);
 		currNode->cmd = NULL;
 		free(currNode);
 		currNode = NULL;
-		pthread_mutex_unlock(&deviceBufPollMutex[*devicePollIndex]);
+		pthread_mutex_unlock(&deviceBufPollMutex[*devicePollIndex]);*/
 	}
 }
 
@@ -591,6 +622,7 @@ AcceptSoftThread(void *arg)
 	int *pIndex = NULL;
 	int bufIndex = 0;
 	char msg[100];
+	BUFFER_POOL2_NODE *bpNode = NULL;
 	
 	//初始化数据库连接
 	g_conn = mysql_init(NULL);
@@ -687,7 +719,15 @@ AcceptSoftThread(void *arg)
 					#if SYS_DEBUG
 					printf("recv new soft data\n");
 					#endif
-					//申请缓冲节点内存
+
+					bpNode = &softBufferPool[bufIndex].bpNode[softBufferPool[bufIndex].writeIndex];
+					while(bpNode->useFlag == 1);//需要等待占用的释放
+					memcpy(bpNode->cmd,buf,n);
+					bpNode->cmdLen = n;
+					bpNode->useFlag = 1;
+					softBufferPool[bufIndex].writeIndex ++;
+					
+					/*//申请缓冲节点内存
 					newNode = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
 					//申请新的命令内存
 					newNode->cmd = malloc(n);
@@ -698,13 +738,13 @@ AcceptSoftThread(void *arg)
 					//复制socket描述符
 					newNode->sockfd = sockfd;
 					//下一个节点为空
-					newNode->nextlink = NULL;
+					newNode->nextlink = NULL;*/
 
-					sprintf(msg,"soft newNode address is 0x%x***************",newNode);
+					/*sprintf(msg,"soft newNode address is 0x%x***************",newNode);
+					WriteLog(msg);*/
+					sprintf(msg,"cmd address is 0x%x***************",bpNode->cmd);
 					WriteLog(msg);
-					sprintf(msg,"cmd address is 0x%x***************",newNode->cmd);
-					WriteLog(msg);
-					
+					/*
 					//进入节点操作前，进行阻塞操作
 					pthread_mutex_lock(&softBufPollMutex[bufIndex]);
 					//将节点提交到缓冲池中
@@ -714,7 +754,7 @@ AcceptSoftThread(void *arg)
 						lastNode = lastNode->nextlink;
 					lastNode->nextlink = newNode;
 					pthread_mutex_unlock(&softBufPollMutex[bufIndex]);
-					newNode = NULL;
+					newNode = NULL;*/
 					
 					bufIndex ++;//5
 					if(bufIndex>=1) bufIndex = 0;
@@ -742,8 +782,9 @@ ReceiveSoftThread(void *arg)
 	int socketID = 0;
 	char deviceID[ID_LEN];
 	char *pos = NULL;
-	BUFFER_POOL *currNode = NULL;
+	//BUFFER_POOL *currNode = NULL;
 	char msg[100];
+	BUFFER_POOL2_NODE *bpNode = NULL;
 	
 	g_conn = mysql_init(NULL);
 	if(init_mysql_conn(g_conn) == 0){
@@ -763,51 +804,54 @@ ReceiveSoftThread(void *arg)
 	{
 		
 		//获取节点头
-		currNode = _bufPollSoft[*softPollIndex];
+		/*currNode = _bufPollSoft[*softPollIndex];
 		if(currNode->nextlink == NULL) continue;
-		currNode = currNode->nextlink;
+		currNode = currNode->nextlink;*/
+		bpNode = &softBufferPool[*softPollIndex].bpNode[softBufferPool[*softPollIndex].readIndex];
+		while(bpNode->useFlag == 0) continue;//不断等待
+		
 		
 		#if SYS_DEBUG
-		printf("soft socketFD:%d Rece:%s\r\n",currNode->sockfd, currNode->cmd);
+		printf("soft socketFD:%d Rece:%s\r\n",bpNode->sockfd, bpNode->cmd);
 		#endif
-		WriteLog(currNode->cmd);
+		WriteLog(bpNode->cmd);
 		
 
 		//提取用户名与密码
 		//指令 AT+USERS=
 		//用户名最大支持20字符，密码最大支持18字符
-		if(strstr(currNode->cmd,"AT+USERS=") != 0){
-			pos = strstr(currNode->cmd,"AT+USERS=");
+		if(strstr(bpNode->cmd,"AT+USERS=") != 0){
+			pos = strstr(bpNode->cmd,"AT+USERS=");
 			if (pos == 0){
-				write(currNode->sockfd, "ERROR\r\n", strlen("ERROR\r\n"));
-				close(currNode->sockfd);
+				write(bpNode->sockfd, "ERROR\r\n", strlen("ERROR\r\n"));
+				close(bpNode->sockfd);
 				pthread_mutex_lock(&gSoftEfdMutex);
-				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 				pthread_mutex_unlock(&gSoftEfdMutex);
 			}
 			else{
 				//处理登录指令
-				int flag = CheckUserName(g_conn,&pos[9],currNode->sockfd);
+				int flag = CheckUserName(g_conn,&pos[9],bpNode->sockfd);
 				if(flag == 0) {
-					write(currNode->sockfd, "OK\r\n", strlen("OK\r\n"));
+					write(bpNode->sockfd, "OK\r\n", strlen("OK\r\n"));
 				}
 				else{
 					sprintf(buf,"ERROR%d\r\n",flag);
-					write(currNode->sockfd, buf, strlen(buf));
-					close(currNode->sockfd);
+					write(bpNode->sockfd, buf, strlen(buf));
+					close(bpNode->sockfd);
 					pthread_mutex_lock(&gSoftEfdMutex);
-					epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+					epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 					pthread_mutex_unlock(&gSoftEfdMutex);
 				}
 			}
 		}
-		else if(strstr(currNode->cmd,"AT+ID=") != 0){
+		else if(strstr(bpNode->cmd,"AT+ID=") != 0){
 			//通过用户名与ID关联
-			if(JudgeSocketFDUserName(g_conn,currNode->sockfd) == 0){
+			if(JudgeSocketFDUserName(g_conn,bpNode->sockfd) == 0){
 				//踢掉连接
-				close(currNode->sockfd);
+				close(bpNode->sockfd);
 				pthread_mutex_lock(&gSoftEfdMutex);
-				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 				pthread_mutex_unlock(&gSoftEfdMutex);
 				sprintf(msg,"soft%d not softSocketFD to Users!\r\n",*softPollIndex);
 				WriteLog(msg);
@@ -815,73 +859,75 @@ ReceiveSoftThread(void *arg)
 			else{
 				//命令AT+ID=0123456789ABCDEF\r\n
 				//传入ID的同时，也需要传入socketID
-				int rt = RecordSocketID(g_conn,&currNode->cmd[6],currNode->sockfd);
+				int rt = RecordSocketID(g_conn,&bpNode->cmd[6],bpNode->sockfd);
 				if(rt == 0)
-					write(currNode->sockfd, "OK\r\n", strlen("OK\r\n"));
+					write(bpNode->sockfd, "OK\r\n", strlen("OK\r\n"));
 				else
-					write(currNode->sockfd, "ERROR\r\n", strlen("ERROR\r\n"));
+					write(bpNode->sockfd, "ERROR\r\n", strlen("ERROR\r\n"));
 			}
 		}
-		else if(strstr(currNode->cmd,"AT\r\n") != 0){
+		else if(strstr(bpNode->cmd,"AT\r\n") != 0){
 			//通过用户名与ID关联
-			if(JudgeSocketFDUserName(g_conn,currNode->sockfd) == 0){
+			if(JudgeSocketFDUserName(g_conn,bpNode->sockfd) == 0){
 				//踢掉连接
-				close(currNode->sockfd);
+				close(bpNode->sockfd);
 				pthread_mutex_lock(&gSoftEfdMutex);
-				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 				pthread_mutex_unlock(&gSoftEfdMutex);
 				sprintf(msg,"soft%d not softSocketFD to Users!\r\n",*softPollIndex);
 				WriteLog(msg);
 			}
 			else{
-				write(currNode->sockfd,"AT+ACK\r\n",8);
+				write(bpNode->sockfd,"AT+ACK\r\n",8);
 			}
 		}
 		else{
 			//通过用户名与ID关联
-			if(JudgeSocketFDUserName(g_conn,currNode->sockfd) == 0){
+			if(JudgeSocketFDUserName(g_conn,bpNode->sockfd) == 0){
 				//踢掉连接
-				close(currNode->sockfd);
+				close(bpNode->sockfd);
 				pthread_mutex_lock(&gSoftEfdMutex);
-				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,currNode->sockfd,NULL);
+				epoll_ctl(gSoftEfd,EPOLL_CTL_DEL,bpNode->sockfd,NULL);
 				pthread_mutex_unlock(&gSoftEfdMutex);
 				sprintf(msg,"soft%d not softSocketFD to Users!\r\n",*softPollIndex);
 				WriteLog(msg);
 			}
 			else{
 				#if defined(AGREEMENT_PASSTHROUGH_MODE)
-				StringSub(&currNode->cmd[1],deviceID,ID_LEN);
+				StringSub(&bpNode->cmd[1],deviceID,ID_LEN);
 				socketID = GetSoftSocketID(g_conn,deviceID,_DEVICE_SOCKET_ID);
 				if(socketID > 0)
 				{
 					#if SYS_DEBUG
-					printf("soft socketFD:%d Send:%s\r\n",socketID, &currNode->cmd[19]);
+					printf("soft socketFD:%d Send:%s\r\n",socketID, &bpNode->cmd[19]);
 					#endif
 					//转发，在这之前如何测试一个文件描述符的有效性
-					write(socketID, &currNode->cmd[19], currNode->cmdLen-(ID_LEN+2));
+					write(socketID, &bpNode->cmd[19], bpNode->cmdLen-(ID_LEN+2));
 					//write(currNode->sockfd,"OK\r\n",4);
 				}
 				else
 				{
-					write(currNode->sockfd,"ERROR\r\n",7);
+					write(bpNode->sockfd,"ERROR\r\n",7);
 				}
 				#endif
 			}
 		}
 
-		sprintf(msg,"softThread currNode address is 0x%x***************",currNode);
+		/*sprintf(msg,"softThread currNode address is 0x%x***************",currNode);
+		WriteLog(msg);*/
+		sprintf(msg,"softThread cmd address is 0x%x***************",bpNode->cmd);
 		WriteLog(msg);
-		sprintf(msg,"softThread cmd address is 0x%x***************",currNode->cmd);
-		WriteLog(msg);
+		bpNode->useFlag = 0;
+		softBufferPool[*softPollIndex].readIndex ++;
 		//删除节点
 		//在删除前，需要有阻塞动作
-		pthread_mutex_lock(&softBufPollMutex[*softPollIndex]);
+		/*pthread_mutex_lock(&softBufPollMutex[*softPollIndex]);
 		_bufPollSoft[*softPollIndex]->nextlink = currNode->nextlink;
 		free(currNode->cmd);
 		currNode->cmd = NULL;
 		free(currNode);
 		currNode = NULL;
-		pthread_mutex_unlock(&softBufPollMutex[*softPollIndex]);
+		pthread_mutex_unlock(&softBufPollMutex[*softPollIndex]);*/
 	}
 }
 

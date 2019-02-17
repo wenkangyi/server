@@ -1,2 +1,4 @@
----- device AcceptThread init_mysql Error! Matches (1 in 1 files) ----
-Thread.c (e:\ftp\c\server\src):		sprintf(msg,"device AcceptThread init_mysql Error!");
+---- select * from deviceLink where Matches (3 in 1 files) ----
+Mysqltest.c (e:\ftp\c\server\src):	sprintf(sqlstr,"select * from deviceLink where _deviceID='%s';",pID);
+Mysqltest.c (e:\ftp\c\server\src):	sprintf(sqlstr,"select * from deviceLink where _deviceID='%s';",deviceID);
+Mysqltest.c (e:\ftp\c\server\src):	sprintf(sqlstr,"select * from deviceLink where _deviceID='%s';",idstr);

@@ -16,6 +16,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <string.h>
+#include <memory.h>
 #include <signal.h>
 #include <sys/resource.h>
 
@@ -31,7 +32,7 @@
 #include "externFun.h"
 
 //如果为调试，即为1
-#define SYS_DEBUG	1
+#define SYS_DEBUG	0
 
 
 //添加软件通讯
@@ -44,6 +45,14 @@
 #define SOCKET_MAX_NUM			60000
 
 #define SOFT_SOCKET_MAX_NUM		60000
+
+//设备缓冲池最大组数
+#define DEV_BUFFER_POOL_MAX_VAL 3
+//设备命令最大长度
+#define CMD_MAX_LEN	256
+//软件缓冲池最大组数
+#define SOFT_BUFFER_POOL_MAX_VAL 3
+
 
 //设备ID最大长度
 #define DEVICE_ID_MAX_LEN 20
@@ -157,6 +166,57 @@ typedef struct _BUFFER_POOL
 }BUFFER_POOL;
 
 
+//缓冲区节点
+typedef struct _BUFFER_POOL2_NODE
+{
+	char cmd[CMD_MAX_LEN];//命令
+	int cmdLen;//命令长度
+	int sockfd;//socket文件描述符
+	int useFlag;//使用标志
+}BUFFER_POOL2_NODE;
+
+
+
+//需要的内存大小2+2+(65535*(DEV_CMD_MAX_LEN+4+4)) = 17301244 = 16.4MB
+typedef struct _BUFFER_POOL2
+{
+	unsigned short int readIndex;
+	unsigned short int writeIndex;
+	BUFFER_POOL2_NODE bpNode[65535];	
+}BUFFER_POOL2;
+
+
+/*********************************/
+//  brks 的协议
+/*typedef struct brks_pro{
+	unsigned char head[4];//--字符hhhh
+	unsigned char ver;//--版本号
+	unsigned char proType;//--0:十六进制，1:其它
+	unsigned short msg_id;//--消息id
+	unsigned int dataLen;//--数据长度
+	void * pbuf;//--当dataLen为0时，这里没数据
+	unsigned char end[4];//--字符eeee
+}Brks_Pro;
+
+
+//proType为0时，void *buf为以下结构 
+typedef struct VOID_BUF_0
+{
+	unsigned char devType;//--10车，11移动设备
+	unsigned char devID[16];//设备的16位ID
+	unsigned char action;//--需要执行的动作,0为执行成功的应答
+	unsigned short dataLen;//--后面数据的长度
+	unsigned char[2] datas;//--如果dataLen为0，即没有
+}VoidBuf0;*/
+
+// brks协议结束
+/*********************************/
+
+
+
+
+
+
 extern void *
 AcceptThread(void *arg);
 #if ADD_SOFT_COMM
@@ -165,7 +225,7 @@ AcceptSoftThread(void *arg);
 #endif
 extern void SystemParamInit(void);
 
-
+extern void InitBufferPool2();
 
 #endif
 

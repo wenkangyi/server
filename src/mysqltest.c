@@ -97,7 +97,11 @@ int executesql(MYSQL *g_conn,const char * sql)
 
 int init_mysql_conn(MYSQL *g_conn)
 {
+	char sql[128];
 	int result = 0;
+
+	memset(sql,0,128);
+	
 	//mutexMySQLConn
 	pthread_mutex_lock(&mutexMySQLConn);
 	if(!mysql_real_connect(g_conn,g_host_name,g_user_name,g_password,g_db_name,g_db_port,NULL,0))
@@ -106,6 +110,12 @@ int init_mysql_conn(MYSQL *g_conn)
 	//检查是否可以使用
 	if(executesql(g_conn,"set names utf8"))
 		result = -1;
+	
+	sprintf(sql,"use %s;",g_db_usr_name);
+	if(executesql(g_conn,sql) == -1)
+	{
+		result = -1;
+	}
 
 	return result;
 }
@@ -218,7 +228,8 @@ int JudgeIDToDeviceLink(MYSQL *g_conn,char *pID,int socketID)
 	MYSQL_RES *_g_res;
 	MYSQL_ROW _g_row;
 
-	for(i=0;i<1024;i++) sqlstr[i] = 0;
+	//for(i=0;i<1024;i++) sqlstr[i] = 0;
+	memset(sqlstr,0,1024);
 	
 	sprintf(sqlstr,"select * from deviceLink where _deviceID='%s';",pID);
 	WriteLog(sqlstr);

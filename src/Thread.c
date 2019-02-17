@@ -46,8 +46,10 @@ BUFFER_POOL *_bufPollSoft[5] = {
 
 //设备终端接收缓冲池
 extern BUFFER_POOL2 devBufferPool[DEV_BUFFER_POOL_MAX_VAL];
+int devIndex[DEV_BUFFER_POOL_MAX_VAL];
 //软件终端接收缓冲池
 extern BUFFER_POOL2 softBufferPool[SOFT_BUFFER_POOL_MAX_VAL];
+int softIndex[DEV_BUFFER_POOL_MAX_VAL];
 
 
 
@@ -133,7 +135,7 @@ void init_buffPoll()
 	memset(msg,0,200);
 
 	//初始化缓冲池，主要是创建每个缓冲区的节点头
-	for(i=0;i<10;i++)
+	for(i=0;i<DEV_BUFFER_POOL_MAX_VAL;i++)
 	{
 		/*_bufPoolDevice[i] = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
 		_bufPoolDevice[i]->cmd = NULL;
@@ -141,12 +143,13 @@ void init_buffPoll()
 		_bufPoolDevice[i]->cmdLen = 0;
 		_bufPoolDevice[i]->nextlink = NULL;*/
 
-		sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
-		WriteLog(msg);
+		//sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
+		//WriteLog(msg);
 		
 		if(i == 0){
-			pIndex = (int *)malloc(sizeof(int));
-			*pIndex = i;
+			//pIndex = (int *)malloc(sizeof(int));
+			devIndex[i] = i;
+			pIndex = &devIndex[i];
 			//t1是否需要管理？
 			pthread_create(&t1, NULL, ReceiveThread, pIndex );
 			pIndex = NULL;
@@ -155,7 +158,7 @@ void init_buffPoll()
 		
 	#if ADD_SOFT_COMM
 	//初始化缓冲池，主要是创建每个缓冲区的节点头
-	for(i=0;i<5;i++)
+	for(i=0;i<SOFT_BUFFER_POOL_MAX_VAL;i++)
 	{
 		/*_bufPollSoft[i] = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
 		_bufPollSoft[i]->cmd = NULL;
@@ -163,12 +166,13 @@ void init_buffPoll()
 		_bufPollSoft[i]->cmdLen = 0;
 		_bufPollSoft[i]->nextlink = NULL;*/
 		
-		sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
-		WriteLog(msg);
+		//sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
+		//WriteLog(msg);
 		
 		if(i == 0){
-			pIndex = (int *)malloc(sizeof(int));
-			*pIndex = i;
+			//pIndex = (int *)malloc(sizeof(int));
+			softIndex[i] = i;
+			pIndex = &softIndex[i];
 			//t1是否需要管理？
 			pthread_create(&t1, NULL, ReceiveSoftThread, pIndex );
 			pIndex = NULL;

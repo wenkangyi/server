@@ -7,7 +7,7 @@ pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
 //s为要记录的字符串
 void WriteLog(char *s)
 {
-	time_t t;
+	/*time_t t;
     struct tm *locp = NULL;
     struct tm loc;
 	char filename[50];
@@ -32,7 +32,7 @@ void WriteLog(char *s)
 		fprintf (fd, "%d:%d:%d %s\n",loc.tm_hour,loc.tm_min,loc.tm_sec,s);
 		fclose(fd);
 		pthread_mutex_unlock(&fileMutex);
-	}	
+	}	*/
 }
 
 

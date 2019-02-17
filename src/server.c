@@ -6,15 +6,11 @@ int main(void)
 {
 
 	pthread_t t1,t2;
-	void *res;
+	void *res = NULL;
 	int s;
 
-	/*struct rlimit rlp;
-	getrlimit(RLIMIT_CORE,&rlp);
-	rlp.rlim_cur = 4 * 1024 * 1024;
-	setrlimit(RLIMIT_CORE,&rlp);*/
 	
-	sleep(3);//延时20S启动
+	sleep(10);//延时20S启动
 	
 	WriteLog("System Start!");
 	
@@ -65,3 +61,4 @@ int main(void)
 
     return 0;
 }
+

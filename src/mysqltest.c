@@ -244,11 +244,15 @@ int JudgeIDToDeviceLink(MYSQL *g_conn,char *pID,int socketID)
 	#endif
 	
 	_iNum_rows = mysql_num_rows(_g_res);
-	if(_iNum_rows == 0) return 0;
+	if(_iNum_rows == 0){
+		mysql_free_result(_g_res);
+		return 0;
+	} 
 	sprintf(sqlstr,"update deviceLink set _deviceSocketID=%d where _deviceID='%s';",socketID,pID);
 	WriteLog(sqlstr);
 	
 	int rt = executesql(g_conn,sqlstr);
+	mysql_free_result(_g_res);
 	
 	if(rt == 0)
 		return 1;
@@ -278,10 +282,11 @@ int GetSoftSocketID(MYSQL *g_conn,char *pID,int socketIDFlag)
 		int iNum_fields = mysql_num_fields(_g_res); // 得到记录的列数
 		_g_row=mysql_fetch_row(_g_res);
 		int socketID = atoi((const char *)_g_row[socketIDFlag]);
-
+		mysql_free_result(_g_res);
+		
 		return socketID;
 	}
-
+	mysql_free_result(_g_res);
 	return -1;
 }
 
@@ -307,10 +312,10 @@ int InDeviceSockFDOutSoftSockFD(MYSQL *g_conn,int deviceSockFD)
 		int iNum_fields = mysql_num_fields(_g_res); // 得到记录的列数
 		_g_row=mysql_fetch_row(_g_res);
 		int socketID = atoi((const char *)_g_row[0]);
-
+		mysql_free_result(_g_res);
 		return socketID;
 	}
-
+	mysql_free_result(_g_res);	
 	return -1;
 
 }
@@ -360,7 +365,10 @@ int CheckUserName(MYSQL *g_conn,char *buf,int softSocketFD)
 	_g_res = mysql_store_result(g_conn);
 	
 	_iNum_rows = mysql_num_rows(_g_res);
-	if(_iNum_rows == 0) return 1;//不存在此用户名
+	if(_iNum_rows == 0) {
+		mysql_free_result(_g_res);
+		return 1;//不存在此用户名
+	}
 
 	_g_row=mysql_fetch_row(_g_res);
 	
@@ -368,10 +376,14 @@ int CheckUserName(MYSQL *g_conn,char *buf,int softSocketFD)
 		//将softSocketID写入数据库
 		sprintf(sqlstr,"update users set _softSocketID=%d where _name='%s';",softSocketFD,userName);
 		executesql(g_conn,sqlstr);
+		mysql_free_result(_g_res);
 		return 0;//验证正确
 	}
-	else
+	else{
+		mysql_free_result(_g_res);
 		return 2;//密码错误
+	}
+		
 }
 
 //根据softSocketID从数据库中查找记录，
@@ -392,7 +404,10 @@ int JudgeSocketFDUserName(MYSQL *g_conn,int softSocketID)
 	_g_res = mysql_store_result(g_conn);
 	
 	_iNum_rows = mysql_num_rows(_g_res);
-	if(_iNum_rows == 0) return 0;//没记录
+	mysql_free_result(_g_res);
+	if(_iNum_rows == 0){
+		return 0;//没记录
+	} 
 	
 	return 1;//有记录	
 }
@@ -458,12 +473,15 @@ int RecordSocketID(MYSQL *g_conn,char *buf,int socketID)
 	_g_res = mysql_store_result(g_conn);
 	
 	_iNum_rows = mysql_num_rows(_g_res);
-	if(_iNum_rows == 0) return 1;//不存在此ID
+	if(_iNum_rows == 0) {
+		mysql_free_result(_g_res);
+		return 1;//不存在此ID
+	}
 
 	sprintf(sqlstr,"update deviceLink set _softSocketID=%d where _deviceID='%s';",socketID,deviceID);
 	WriteLog(sqlstr);
 	int rt = executesql(g_conn,sqlstr);
-	
+	mysql_free_result(_g_res);
 	if( rt == 0)
 		return 0;
 	return 1;
@@ -486,6 +504,7 @@ void CheckAdminUser(MYSQL *g_conn)
 		//sprintf(sql,"insert into users values(%d,'%s','%s','%s',%s,'%s');",i,ope.name,ope.passwd,Time,ID,ope.remark);
   		executesql(g_conn,"INSERT INTO users(_name, _password,_permissions) VALUES('Admin', 'Wen0136825',0);");
 	}
+	mysql_free_result(_g_res);
 }
 
 //ID存在，即返回1，不存在，即返回0
@@ -503,6 +522,7 @@ uInt8 CheckID(MYSQL *g_conn,char *idstr)
 	executesql(g_conn,sqlstr);
 	_g_res = mysql_store_result(g_conn);
 	_iNum_rows = mysql_num_rows(_g_res);
+	mysql_free_result(_g_res);
 	if(_iNum_rows == 0)
 		return 0;
 	else

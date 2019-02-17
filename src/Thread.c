@@ -146,14 +146,14 @@ void init_buffPoll()
 		//sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
 		//WriteLog(msg);
 		
-		if(i == 0){
+		//if(i == 0){
 			//pIndex = (int *)malloc(sizeof(int));
 			devIndex[i] = i;
 			pIndex = &devIndex[i];
 			//t1是否需要管理？
 			pthread_create(&t1, NULL, ReceiveThread, pIndex );
 			pIndex = NULL;
-		}
+		//}
 	}
 		
 	#if ADD_SOFT_COMM
@@ -169,14 +169,14 @@ void init_buffPoll()
 		//sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
 		//WriteLog(msg);
 		
-		if(i == 0){
+		//if(i == 0){
 			//pIndex = (int *)malloc(sizeof(int));
 			softIndex[i] = i;
 			pIndex = &softIndex[i];
 			//t1是否需要管理？
 			pthread_create(&t1, NULL, ReceiveSoftThread, pIndex );
 			pIndex = NULL;
-		}
+		//}
 	}
 	#endif
 
@@ -376,7 +376,7 @@ AcceptThread(void *arg)
 					#endif
 
 					bufIndex ++;//10
-					if(bufIndex >=1) bufIndex=0;
+					if(bufIndex >=DEV_BUFFER_POOL_MAX_VAL) bufIndex=0;
 				}
 			}
 		}
@@ -761,7 +761,7 @@ AcceptSoftThread(void *arg)
 					newNode = NULL;*/
 					
 					bufIndex ++;//5
-					if(bufIndex>=1) bufIndex = 0;
+					if(bufIndex>=SOFT_BUFFER_POOL_MAX_VAL) bufIndex = 0;
 					//将接收到的数据提交到队列中，由其它线程处理
 				}
 			}

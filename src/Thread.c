@@ -135,11 +135,11 @@ void init_buffPoll()
 	//初始化缓冲池，主要是创建每个缓冲区的节点头
 	for(i=0;i<10;i++)
 	{
-		_bufPoolDevice[i] = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
+		/*_bufPoolDevice[i] = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
 		_bufPoolDevice[i]->cmd = NULL;
 		_bufPoolDevice[i]->sockfd = -1;
 		_bufPoolDevice[i]->cmdLen = 0;
-		_bufPoolDevice[i]->nextlink = NULL;
+		_bufPoolDevice[i]->nextlink = NULL;*/
 
 		sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
 		WriteLog(msg);
@@ -157,11 +157,11 @@ void init_buffPoll()
 	//初始化缓冲池，主要是创建每个缓冲区的节点头
 	for(i=0;i<5;i++)
 	{
-		_bufPollSoft[i] = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
+		/*_bufPollSoft[i] = (BUFFER_POOL *)malloc(sizeof(BUFFER_POOL));
 		_bufPollSoft[i]->cmd = NULL;
 		_bufPollSoft[i]->sockfd = -1;
 		_bufPollSoft[i]->cmdLen = 0;
-		_bufPollSoft[i]->nextlink = NULL;
+		_bufPollSoft[i]->nextlink = NULL;*/
 		
 		sprintf(msg,"_bufPollSoft[%d] address is 0x%x***************",i,_bufPollSoft[i]);
 		WriteLog(msg);
